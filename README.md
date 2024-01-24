@@ -1,5 +1,11 @@
 ## Build
 
+1. Make sure that build-essential is installed.
+
+   ```
+   sudo apt-get install build-essential
+   ```
+
 1. Install CMake (at least version 3.13), and GCC cross compiler
 
    ```
