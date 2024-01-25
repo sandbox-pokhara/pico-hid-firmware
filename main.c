@@ -98,6 +98,16 @@ static void send_hid_report(uint8_t report_id, uint8_t keystroke)
       }
     }
     break;
+
+    case REPORT_ID_MOUSE:
+    {
+      int8_t const delta = 5;
+
+      // no button, right + down, no scroll, no pan
+      tud_hid_mouse_report(REPORT_ID_MOUSE, MOUSE_BUTTON_BACKWARD, delta, delta, 0, 0);
+    }
+    break;
+
     default: break;
   }
 }
