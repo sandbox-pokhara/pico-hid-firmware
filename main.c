@@ -57,7 +57,10 @@ int main(void)
 
         struct UART_MESSAGE message = {REPORT_ID_KEYBOARD, 0, 0, 0, 0, 0, 0};
 
-        bool uart_complete = uart_task(&message);
+        if (uart_is_readable(UART_ID))
+        {
+            bool uart_complete = uart_task(&message);
+        }
 
         hid_task(&message);
     }
@@ -244,7 +247,7 @@ bool uart_task(struct UART_MESSAGE *message)
     int filler;
     int buttons, x, y, vertical, horizontal;
     char keystroke;
-    int parsed_fields = sscanf(receivedString, "%3s,%c,%d,%d,%d,%d,%d,%d", report_id, keystroke, &buttons, &x, &y, &vertical, &horizontal, filler);
+    int parsed_fields = sscanf(receivedString, "%3s,%c,%d,%d,%d,%d,%d,%d", report_id, &keystroke, &buttons, &x, &y, &vertical, &horizontal, filler);
 
     if (parsed_fields == 8)
     {

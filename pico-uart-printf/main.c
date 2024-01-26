@@ -14,7 +14,7 @@
 enum
 {
     REPORT_ID_KEYBOARD = 1,
-    REPORT_ID_MOUSE=9,
+    REPORT_ID_MOUSE = 9,
     REPORT_ID_CONSUMER_CONTROL,
     REPORT_ID_GAMEPAD,
     REPORT_ID_COUNT
@@ -45,20 +45,18 @@ int main()
     {
         struct UART_MESSAGE message = {REPORT_ID_KEYBOARD, 0, 0, 0, 0, 0, 0};
 
-        bool uart_complete = uart_task(&message);
+        if (uart_is_readable(UART_ID))
+        {
+            bool uart_complete = uart_task(&message);
 
-        // if (!uart_complete)
-        // {
-        //     continue;
-        // }
-
-        printf("Report ID: %d\n", message.report_id);
-        printf("Keystroke: %d\n", message.keystroke);
-        printf("Buttons: %d\n", message.buttons);
-        printf("X: %d\n", message.x);
-        printf("Y: %d\n", message.y);
-        printf("Vertical: %d\n", message.vertical);
-        printf("Horizontal: %d\n", message.horizontal);
+            printf("Report ID: %d\n", message.report_id);
+            printf("Keystroke: %d\n", message.keystroke);
+            printf("Buttons: %d\n", message.buttons);
+            printf("X: %d\n", message.x);
+            printf("Y: %d\n", message.y);
+            printf("Vertical: %d\n", message.vertical);
+            printf("Horizontal: %d\n", message.horizontal);
+        }
     }
 }
 
@@ -93,7 +91,7 @@ bool uart_task(struct UART_MESSAGE *message)
     int filler;
     int buttons, x, y, vertical, horizontal;
     char keystroke;
-    int parsed_fields = sscanf(receivedString, "%3s,%c,%d,%d,%d,%d,%d,%d", report_id, keystroke, &buttons, &x, &y, &vertical, &horizontal, filler);
+    int parsed_fields = sscanf(receivedString, "%3s,%c,%d,%d,%d,%d,%d,%d", report_id, &keystroke, &buttons, &x, &y, &vertical, &horizontal, filler);
 
     if (parsed_fields == 8)
     {
