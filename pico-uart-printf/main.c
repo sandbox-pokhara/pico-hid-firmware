@@ -106,6 +106,11 @@ bool uart_task(struct UART_MESSAGE *message)
         }
         message->keystroke = (uint8_t)keystroke;
 
+        if (message->report_id == REPORT_ID_MOUSE)
+        {
+            message->keystroke = 0;
+        }
+
         message->buttons = buttons;
         message->x = x;
         message->y = y;

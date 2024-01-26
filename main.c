@@ -101,9 +101,9 @@ static void send_hid_report(struct UART_MESSAGE *message)
         if (message->keystroke != 0)
         {
             uint8_t keycode[6] = {0};
-            // keycode[0] = HID_KEY_A;
-            keycode[0] = message->keystroke;
-            message->keystroke = 0;
+            keycode[0] = HID_KEY_A;
+            // keycode[0] = message->keystroke;
+            // message->keystroke = 0;
 
             tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keycode);
             has_keyboard_key = true;
@@ -218,12 +218,12 @@ void led_blinking_task(void)
 
 bool uart_task(struct UART_MESSAGE *message)
 {
-    const uint32_t interval_ms = 10;
-    static uint32_t start_ms = 0;
+    // const uint32_t interval_ms = 10;
+    // static uint32_t start_ms = 0;
 
-    if (board_millis() - start_ms < interval_ms)
-        return 0; // not enough time
-    start_ms += interval_ms;
+    // if (board_millis() - start_ms < interval_ms)
+    //     return 0; // not enough time
+    // start_ms += interval_ms;
 
     char c = uart_getc(UART_ID);
 
@@ -261,6 +261,11 @@ bool uart_task(struct UART_MESSAGE *message)
             message->report_id = REPORT_ID_MOUSE;
         }
         message->keystroke = (uint8_t)keystroke;
+
+        if (message->report_id == REPORT_ID_MOUSE)
+        {
+            message->keystroke = 0x01;  // to enable tud_remote_wakeup()
+        }
 
         message->buttons = buttons;
         message->x = x;
