@@ -87,7 +87,7 @@ void tud_resume_cb(void)
     blink_interval_ms = BLINK_MOUNTED;
 }
 
-static void send_hid_report(struct UART_MESSAGE *message)
+static void send_hid_report(struct UART_MESSAGE *message, uint32_t btn)
 {
     if (!tud_hid_ready())
         return;
@@ -98,12 +98,22 @@ static void send_hid_report(struct UART_MESSAGE *message)
     {
         static bool has_keyboard_key = false;
 
-        if (message->keystroke != 0)
+        if (message->keystroke != 0 || btn)
         {
             uint8_t keycode[6] = {0};
             keycode[0] = HID_KEY_A;
             // keycode[0] = message->keystroke;
             // message->keystroke = 0;
+            if (btn)
+            {
+                keycode[0] = HID_KEY_A;
+                int8_t const delta = 5;
+                // no button, right + down, no scroll, no pan
+                tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, delta, delta, 0, 0);
+                // add delay
+                board_delay(10);
+
+            }
 
             tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keycode);
             has_keyboard_key = true;
@@ -137,13 +147,15 @@ void hid_task(struct UART_MESSAGE *message)
         return; // not enough time
     start_ms += interval_ms;
 
-    if (tud_suspended() && message->keystroke != 0)
+    uint32_t const btn = board_button_read();
+
+    if (tud_suspended() && (message->keystroke != 0 || btn))
     {
         tud_remote_wakeup();
     }
     else
     {
-        send_hid_report(message);
+        send_hid_report(message, btn);
     }
 }
 
@@ -232,8 +244,8 @@ bool uart_task(struct UART_MESSAGE *message)
     {
         return false;
     }
-    char receivedString[MESSAGE_LENGTH];
-    uart_read_blocking(UART_ID, (uint8_t *)receivedString, MESSAGE_LENGTH);
+    char receivedString[MESSAGE_LENGTH+1];
+    uart_read_blocking(UART_ID, (uint8_t *)receivedString, MESSAGE_LENGTH+1);
 
     if (receivedString[MESSAGE_LENGTH - 2] != 'E')
     {
@@ -242,6 +254,8 @@ bool uart_task(struct UART_MESSAGE *message)
     // Null-terminate the string
     receivedString[MESSAGE_LENGTH - 2] = '\0';
     receivedString[MESSAGE_LENGTH - 1] = '\0';
+    receivedString[MESSAGE_LENGTH] = '\0';
+
     char report_id[3];
 
     int filler;
@@ -264,7 +278,7 @@ bool uart_task(struct UART_MESSAGE *message)
 
         if (message->report_id == REPORT_ID_MOUSE)
         {
-            message->keystroke = 0x01;  // to enable tud_remote_wakeup()
+            message->keystroke = 0x01; // to enable tud_remote_wakeup()
         }
 
         message->buttons = buttons;

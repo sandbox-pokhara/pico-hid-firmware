@@ -12,18 +12,19 @@ void setup() {
 
 void loop() {
   // Check if the button is pressed
-  if (digitalRead(BUTTON_PIN) == LOW) {
+  // if (digitalRead(BUTTON_PIN) == LOW) {
     // Button is pressed, send UART message
     sendUartMessage();
     
     // Wait for a debounce delay (adjust as needed)
     delay(100);
-  }
+  // }
 }
 
 void sendUartMessage() {
-  // const char* message = "Smou,1,-220,-221,-222,-223,1E";
-  const char* message = "Smou,1,0,0,0,0,9999999999999E";
+  // max length = "SMOU,0,0,-222,-222,-222,-222,1E" -> 31 chars
+  // const char* message = "SMOU,1,-220,-221,-222,-223,1E";
+  const char* message = "SKBD,A,0,50,50,0,0,99999999999E";
   
   // Print the message on the Serial Monitor
   Serial.print("UART Sent: ");
@@ -36,12 +37,11 @@ void sendUartMessage() {
   HWSERIAL.print(message);
 
   // Add a newline character for better readability
-  HWSERIAL.write('\n');
+  HWSERIAL.write('\n\r');
 
   // Wait for a short delay (optional)
   delay(10);
 
   // Flush HWSERIAL buffer (optional)
   HWSERIAL.flush();
-  delay(200);
 }
