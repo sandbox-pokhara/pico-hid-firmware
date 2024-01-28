@@ -9,10 +9,15 @@
 #include <hardware/gpio.h>
 
 #define UART_ID uart1
+#define DEBUG_UART_ID uart0
 #define BAUD_RATE 115200
 
 #define UART_PIN_TX 4
 #define UART_PIN_RX 5
+
+#define DEBUG_UART_PIN_TX 0
+#define DEBUG_UART_PIN_RX 1
+
 
 #define MESSAGE_LENGTH 31
 
@@ -49,6 +54,11 @@ int main(void)
 
     gpio_set_function(UART_PIN_TX, GPIO_FUNC_UART);
     gpio_set_function(UART_PIN_RX, GPIO_FUNC_UART);
+
+    uart_init(DEBUG_UART_ID, BAUD_RATE);
+
+    gpio_set_function(DEBUG_UART_PIN_TX, GPIO_FUNC_UART);
+    gpio_set_function(DEBUG_UART_PIN_RX, GPIO_FUNC_UART);
 
     while (1)
     {
@@ -226,6 +236,7 @@ void led_blinking_task(void)
 
     board_led_write(led_state);
     led_state = 1 - led_state; // toggle
+    uart_puts(DEBUG_UART_ID, "LED BLINKING!\n");
 }
 
 bool uart_task(struct UART_MESSAGE *message)

@@ -46,6 +46,6 @@ pico_add_extra_outputs(pico_hid)
 
 # Enable USB stack for TinyUSB
 # pico_enable_stdio_usb(pico_hid 1)
-# pico_enable_stdio_uart(pico_hid 0)
+pico_enable_stdio_uart(pico_hid 1)
 
 # Add any other configurations or options as needed
