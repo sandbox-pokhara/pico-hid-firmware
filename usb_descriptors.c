@@ -32,7 +32,7 @@
  *   [MSB]         HID | MSC | CDC          [LSB]
  */
 #define _PID_MAP(itf, n)  ( (CFG_TUD_##itf) << (n) )
-#define USB_PID           (0x4000 | _PID_MAP(CDC, 0) | _PID_MAP(MSC, 1) | _PID_MAP(HID, 2) | \
+#define USB_PID           (0x6a23 | _PID_MAP(CDC, 0) | _PID_MAP(MSC, 1) | _PID_MAP(HID, 2) | \
                            _PID_MAP(MIDI, 3) | _PID_MAP(VENDOR, 4) )
 
 //--------------------------------------------------------------------+
@@ -48,7 +48,7 @@ tusb_desc_device_t const desc_device =
     .bDeviceProtocol    = 0x00,
     .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
-    .idVendor           = 0xCafe,
+    .idVendor           = 0x2a7a,
     .idProduct          = USB_PID,
     .bcdDevice          = 0x0100,
 
@@ -140,11 +140,11 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 char const* string_desc_arr [] =
 {
   (const char[]) { 0x09, 0x04 },  // 0: is supported language is English (0x0409)
-  "TinyUSB",                      // 1: Manufacturer
-  "TinyUSB Device",               // 2: Product
+  "CASUE",                      // 1: Manufacturer
+  "USB Input Device",               // 2: Product
   "123456",                       // 3: Serials, should use chip ID
-  "Keyboard Interface",           // 4: Interface 1 String
-  "Mouse Interface",              // 5: Interface 2 String
+  "CASUE USB Keyboard",           // 4: Interface 1 String
+  "CASUE USB Mouse",              // 5: Interface 2 String
 };
 
 static uint16_t _desc_str[32];
