@@ -4,7 +4,7 @@
 
 #include "tusb.h"
 #include "bsp/board.h"
-#include "usb_descriptors.h"
+// #include "usb_descriptors.h"
 #include "hardware/uart.h"
 #include <hardware/gpio.h>
 
@@ -18,8 +18,20 @@
 #define DEBUG_UART_PIN_TX 0
 #define DEBUG_UART_PIN_RX 1
 
-
 #define MESSAGE_LENGTH 31
+
+enum
+{
+    ITF_KEYBOARD = 0,
+    ITF_MOUSE = 1
+};
+
+enum
+{
+    BLINK_NOT_MOUNTED = 250,
+    BLINK_MOUNTED = 1000,
+    BLINK_SUSPENDED = 2500,
+};
 
 struct UART_MESSAGE
 {
@@ -30,13 +42,6 @@ struct UART_MESSAGE
     int8_t y;
     int8_t vertical;
     int8_t horizontal;
-};
-
-enum
-{
-    BLINK_NOT_MOUNTED = 250,
-    BLINK_MOUNTED = 1000,
-    BLINK_SUSPENDED = 2500,
 };
 
 static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
@@ -65,7 +70,7 @@ int main(void)
         tud_task();
         led_blinking_task();
 
-        struct UART_MESSAGE message = {REPORT_ID_KEYBOARD, 0, 0, 0, 0, 0, 0};
+        struct UART_MESSAGE message = {ITF_KEYBOARD, 0, 0, 0, 0, 0, 0};
 
         if (uart_is_readable(UART_ID))
         {
@@ -97,57 +102,6 @@ void tud_resume_cb(void)
     blink_interval_ms = BLINK_MOUNTED;
 }
 
-static void send_hid_report(struct UART_MESSAGE *message, uint32_t btn)
-{
-    if (!tud_hid_ready())
-        return;
-
-    switch (message->report_id)
-    {
-    case REPORT_ID_KEYBOARD:
-    {
-        static bool has_keyboard_key = false;
-
-        if (message->keystroke != 0 || btn)
-        {
-            uint8_t keycode[6] = {0};
-            keycode[0] = HID_KEY_A;
-            // keycode[0] = message->keystroke;
-            // message->keystroke = 0;
-            if (btn)
-            {
-                keycode[0] = HID_KEY_A;
-                int8_t const delta = 5;
-                // no button, right + down, no scroll, no pan
-                tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, delta, delta, 0, 0);
-                // add delay
-                board_delay(10);
-
-            }
-
-            tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keycode);
-            has_keyboard_key = true;
-        }
-        else
-        {
-            if (has_keyboard_key)
-                tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, NULL);
-            has_keyboard_key = false;
-        }
-    }
-    break;
-
-    case REPORT_ID_MOUSE:
-    {
-        tud_hid_mouse_report(REPORT_ID_MOUSE, message->buttons, message->x, message->y, message->vertical, message->horizontal);
-    }
-    break;
-
-    default:
-        break;
-    }
-}
-
 void hid_task(struct UART_MESSAGE *message)
 {
     const uint32_t interval_ms = 10;
@@ -163,29 +117,52 @@ void hid_task(struct UART_MESSAGE *message)
     {
         tud_remote_wakeup();
     }
-    else
+    /*------------- Keyboard -------------*/
+    if (tud_hid_n_ready(ITF_KEYBOARD))
     {
-        send_hid_report(message, btn);
+        static bool has_key = false;
+
+        if (message->keystroke != 0 || btn)
+        {
+            uint8_t keycode[6] = {0};
+            keycode[0] = HID_KEY_A;
+            // keycode[0] = message->keystroke;
+            if (btn)
+            {
+                keycode[0] = HID_KEY_A;
+                int8_t const delta = 5;
+                // no button, right + down, no scroll, no pan
+                tud_hid_mouse_report(ITF_MOUSE, 0x00, delta, delta, 0, 0);
+                // add delay
+                board_delay(10);
+            }
+                uart_puts(DEBUG_UART_ID, "button presse!\n");
+
+            tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, keycode);
+            has_key = true;
+        }
+        else
+        {
+            if (has_key)
+                tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, NULL);
+            has_key = false;
+        }
+    }
+
+    /*------------- Mouse -------------*/
+    if (tud_hid_n_ready(ITF_MOUSE))
+    {
+        if (btn)
+        {
+            tud_hid_mouse_report(ITF_MOUSE, message->buttons, message->x, message->y, message->vertical, message->horizontal);
+        }
     }
 }
 
-// void tud_hid_report_complete_cb(uint8_t instance, uint8_t const *report, uint16_t len)
-// {
-//     (void)instance;
-//     (void)len;
-
-//     uint8_t next_report_id = report[0] + 1;
-
-//     if (next_report_id < REPORT_ID_COUNT)
-//     {
-//         send_hid_report(next_report_id, board_button_read());
-//     }
-// }
-
-uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen)
+uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen)
 {
     // TODO not Implemented
-    (void)instance;
+    (void)itf;
     (void)report_id;
     (void)report_type;
     (void)buffer;
@@ -194,32 +171,14 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
     return 0;
 }
 
-void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer, uint16_t bufsize)
+void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer, uint16_t bufsize)
 {
-    (void)instance;
-
-    if (report_type == HID_REPORT_TYPE_OUTPUT)
-    {
-        if (report_id == REPORT_ID_KEYBOARD)
-        {
-            // bufsize should be (at least) 1
-            if (bufsize < 1)
-                return;
-
-            uint8_t const kbd_leds = buffer[0];
-
-            if (kbd_leds & KEYBOARD_LED_CAPSLOCK)
-            {
-                blink_interval_ms = 0;
-                board_led_write(true);
-            }
-            else
-            {
-                board_led_write(false);
-                blink_interval_ms = BLINK_MOUNTED;
-            }
-        }
-    }
+    // TODO set LED based on CAPLOCK, NUMLOCK etc...
+    (void)itf;
+    (void)report_id;
+    (void)report_type;
+    (void)buffer;
+    (void)bufsize;
 }
 
 void led_blinking_task(void)
@@ -227,16 +186,13 @@ void led_blinking_task(void)
     static uint32_t start_ms = 0;
     static bool led_state = false;
 
-    if (!blink_interval_ms)
-        return;
-
     if (board_millis() - start_ms < blink_interval_ms)
         return; // not enough time
     start_ms += blink_interval_ms;
 
     board_led_write(led_state);
     led_state = 1 - led_state; // toggle
-    uart_puts(DEBUG_UART_ID, "LED BLINKING!\n");
+    // uart_puts(DEBUG_UART_ID, "LED BLINKING!\n");
 }
 
 bool uart_task(struct UART_MESSAGE *message)
@@ -255,8 +211,8 @@ bool uart_task(struct UART_MESSAGE *message)
     {
         return false;
     }
-    char receivedString[MESSAGE_LENGTH+1];
-    uart_read_blocking(UART_ID, (uint8_t *)receivedString, MESSAGE_LENGTH+1);
+    char receivedString[MESSAGE_LENGTH + 1];
+    uart_read_blocking(UART_ID, (uint8_t *)receivedString, MESSAGE_LENGTH + 1);
 
     if (receivedString[MESSAGE_LENGTH - 2] != 'E')
     {
@@ -279,15 +235,15 @@ bool uart_task(struct UART_MESSAGE *message)
         // Copy the message into the struct
         if (strcmp(report_id, "KBD") == 0)
         {
-            message->report_id = REPORT_ID_KEYBOARD;
+            message->report_id = ITF_KEYBOARD;
         }
         else if (strcmp(report_id, "MOU") == 0)
         {
-            message->report_id = REPORT_ID_MOUSE;
+            message->report_id = ITF_MOUSE;
         }
         message->keystroke = (uint8_t)keystroke;
 
-        if (message->report_id == REPORT_ID_MOUSE)
+        if (message->report_id == ITF_MOUSE)
         {
             message->keystroke = 0x01; // to enable tud_remote_wakeup()
         }
