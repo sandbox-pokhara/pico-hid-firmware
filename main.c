@@ -65,6 +65,8 @@ int main(void)
     gpio_set_function(DEBUG_UART_PIN_TX, GPIO_FUNC_UART);
     gpio_set_function(DEBUG_UART_PIN_RX, GPIO_FUNC_UART);
 
+    tud_init(BOARD_TUD_RHPORT);
+
     while (1)
     {
         tud_task();
@@ -79,6 +81,7 @@ int main(void)
 
         hid_task(&message);
     }
+    return 0;
 }
 
 void tud_mount_cb(void)
@@ -132,11 +135,11 @@ void hid_task(struct UART_MESSAGE *message)
                 keycode[0] = HID_KEY_A;
                 int8_t const delta = 5;
                 // no button, right + down, no scroll, no pan
-                tud_hid_mouse_report(ITF_MOUSE, 0x00, delta, delta, 0, 0);
+                tud_hid_n_mouse_report(ITF_MOUSE, 0, 0x00, delta, delta, 0, 0);
                 // add delay
                 board_delay(10);
             }
-                uart_puts(DEBUG_UART_ID, "button presse!\n");
+            uart_puts(DEBUG_UART_ID, "button pressed!\n");
 
             tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, keycode);
             has_key = true;
@@ -154,7 +157,7 @@ void hid_task(struct UART_MESSAGE *message)
     {
         if (btn)
         {
-            tud_hid_mouse_report(ITF_MOUSE, message->buttons, message->x, message->y, message->vertical, message->horizontal);
+            tud_hid_n_mouse_report(ITF_MOUSE, 0, message->buttons, message->x, message->y, message->vertical, message->horizontal);
         }
     }
 }
