@@ -4,7 +4,6 @@
 
 #include "tusb.h"
 #include "bsp/board.h"
-// #include "usb_descriptors.h"
 #include "hardware/uart.h"
 #include <hardware/gpio.h>
 
@@ -134,7 +133,6 @@ void hid_task(struct UART_MESSAGE *message)
             {
                 keycode[0] = HID_KEY_A;
                 int8_t const delta = 5;
-                // no button, right + down, no scroll, no pan
                 tud_hid_n_mouse_report(ITF_MOUSE, 0, 0x00, delta, delta, 0, 0);
                 // add delay
                 board_delay(10);
@@ -195,18 +193,10 @@ void led_blinking_task(void)
 
     board_led_write(led_state);
     led_state = 1 - led_state; // toggle
-    // uart_puts(DEBUG_UART_ID, "LED BLINKING!\n");
 }
 
 bool uart_task(struct UART_MESSAGE *message)
 {
-    // const uint32_t interval_ms = 10;
-    // static uint32_t start_ms = 0;
-
-    // if (board_millis() - start_ms < interval_ms)
-    //     return 0; // not enough time
-    // start_ms += interval_ms;
-
     char c = uart_getc(UART_ID);
 
     // Look for the start character 's'
