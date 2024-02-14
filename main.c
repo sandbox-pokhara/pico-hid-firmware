@@ -32,6 +32,10 @@ enum
     BLINK_SUSPENDED = 2500,
 };
 
+// "SMOU,0,0,-222,-222,-222,-222,1E" -> 31 chars
+// "SKBD,A,0,50,50,0,0,99999999999E" -> 31 chars 
+// in addition to 31 chars 1 char is added at the end for null terminator
+
 struct UART_MESSAGE
 {
     uint8_t report_id;
@@ -199,22 +203,21 @@ bool uart_task(struct UART_MESSAGE *message)
 {
     char c = uart_getc(UART_ID);
 
-    // Look for the start character 's'
+    // Look for the start character 'S'
     if (c != 'S')
     {
         return false;
     }
-    char receivedString[MESSAGE_LENGTH + 1];
-    uart_read_blocking(UART_ID, (uint8_t *)receivedString, MESSAGE_LENGTH + 1);
+    char receivedString[MESSAGE_LENGTH]; // 30 characters + 1 null terminator
+    uart_read_blocking(UART_ID, (uint8_t *)receivedString, MESSAGE_LENGTH);
 
     if (receivedString[MESSAGE_LENGTH - 2] != 'E')
     {
         return false;
     }
     // Null-terminate the string
-    receivedString[MESSAGE_LENGTH - 2] = '\0';
     receivedString[MESSAGE_LENGTH - 1] = '\0';
-    receivedString[MESSAGE_LENGTH] = '\0';
+    receivedString[MESSAGE_LENGTH - 2] = '\0';
 
     char report_id[3];
 
