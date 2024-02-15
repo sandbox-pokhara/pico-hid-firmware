@@ -33,7 +33,7 @@ enum
 };
 
 // "SMOU,0,0,-222,-222,-222,-222,1E" -> 31 chars
-// "SKBD,A,0,50,50,0,0,99999999999E" -> 31 chars 
+// "SKBD,A,0,50,50,0,0,99999999999E" -> 31 chars
 // in addition to 31 chars 1 char is added at the end for null terminator
 
 struct UART_MESSAGE
@@ -52,6 +52,7 @@ static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 void led_blinking_task(void);
 void hid_task(struct UART_MESSAGE *message);
 bool uart_task(struct UART_MESSAGE *message);
+void button_debug_task(void);
 
 int main(void)
 {
@@ -83,6 +84,7 @@ int main(void)
         }
 
         hid_task(&message);
+        button_debug_task();
     }
     return 0;
 }
@@ -117,50 +119,53 @@ void hid_task(struct UART_MESSAGE *message)
         return; // not enough time
     start_ms += interval_ms;
 
-    uint32_t const btn = board_button_read();
-
-    if (tud_suspended() && (message->keystroke != 0 || btn))
+    switch (message->report_id)
     {
-        tud_remote_wakeup();
-    }
-    /*------------- Keyboard -------------*/
-    if (tud_hid_n_ready(ITF_KEYBOARD))
+    case ITF_KEYBOARD:
     {
-        static bool has_key = false;
-
-        if (message->keystroke != 0 || btn)
+        if (tud_hid_n_ready(ITF_KEYBOARD))
         {
-            uint8_t keycode[6] = {0};
-            keycode[0] = HID_KEY_A;
-            // keycode[0] = message->keystroke;
-            if (btn)
+            static bool has_key = false;
+
+            if (message->keystroke != 0)
             {
+                if (tud_suspended())
+                {
+                    tud_remote_wakeup();
+                }
+                uint8_t keycode[6] = {0};
                 keycode[0] = HID_KEY_A;
-                int8_t const delta = 5;
-                tud_hid_n_mouse_report(ITF_MOUSE, 0, 0x00, delta, delta, 0, 0);
-                // add delay
-                board_delay(10);
-            }
-            uart_puts(DEBUG_UART_ID, "button pressed!\n");
+                // keycode[0] = message->keystroke;
 
-            tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, keycode);
-            has_key = true;
-        }
-        else
-        {
-            if (has_key)
-                tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, NULL);
-            has_key = false;
+                tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, keycode);
+                has_key = true;
+            }
+            else
+            {
+                if (has_key)
+                    tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, NULL);
+                has_key = false;
+            }
         }
     }
+    break;
 
-    /*------------- Mouse -------------*/
-    if (tud_hid_n_ready(ITF_MOUSE))
+    case ITF_MOUSE:
     {
-        if (btn)
+        if (tud_suspended())
+        {
+            tud_remote_wakeup();
+        }
+
+        if (tud_hid_n_ready(ITF_MOUSE))
         {
             tud_hid_n_mouse_report(ITF_MOUSE, 0, message->buttons, message->x, message->y, message->vertical, message->horizontal);
         }
+    }
+    break;
+
+    default:
+        break;
     }
 }
 
@@ -199,6 +204,59 @@ void led_blinking_task(void)
     led_state = 1 - led_state; // toggle
 }
 
+void button_debug_task(void)
+{
+    // Poll every 10ms
+    const uint32_t interval_ms = 10;
+    static uint32_t start_ms = 0;
+
+    if (board_millis() - start_ms < interval_ms)
+        return; // not enough time
+    start_ms += interval_ms;
+
+    uint32_t const btn = board_button_read();
+    static bool has_key = false;
+
+    // If USB is suspended and a button is pressed, wake up the device
+    if (tud_suspended() && btn)
+    {
+        tud_remote_wakeup();
+    }
+
+    // If a button is pressed
+    if (btn)
+    {
+        // If keyboard HID interface is ready
+        if (tud_hid_n_ready(ITF_KEYBOARD))
+        {
+            uint8_t keycode[6] = {0};
+            keycode[0] = HID_KEY_A; // Sending 'A' key
+            tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, keycode);
+            has_key = true;
+        }
+
+        // If mouse HID interface is ready
+        if (tud_hid_n_ready(ITF_MOUSE))
+        {
+            int8_t const delta = 5;
+            tud_hid_n_mouse_report(ITF_MOUSE, 0, 0x00, delta, delta, 0, 0);
+        }
+
+        board_led_write(1); // Turn on LED
+    }
+    else
+    {
+        // If there was previously a key pressed, send an empty key report
+        if (has_key)
+        {
+            tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, NULL);
+        }
+        has_key = false;
+
+        board_led_write(0); // Turn off LED
+    }
+}
+
 bool uart_task(struct UART_MESSAGE *message)
 {
     char c = uart_getc(UART_ID);
@@ -206,10 +264,14 @@ bool uart_task(struct UART_MESSAGE *message)
     // Look for the start character 'S'
     if (c != 'S')
     {
+        uart_puts(DEBUG_UART_ID, "Invalid start character\n\0");
         return false;
     }
     char receivedString[MESSAGE_LENGTH]; // 30 characters + 1 null terminator
     uart_read_blocking(UART_ID, (uint8_t *)receivedString, MESSAGE_LENGTH);
+
+    uart_puts(DEBUG_UART_ID, receivedString);
+    uart_putc(DEBUG_UART_ID, '\n');
 
     if (receivedString[MESSAGE_LENGTH - 2] != 'E')
     {
@@ -249,6 +311,8 @@ bool uart_task(struct UART_MESSAGE *message)
         message->y = y;
         message->vertical = vertical;
         message->horizontal = horizontal;
+
+        uart_puts(DEBUG_UART_ID, "Message parsed successfully\n\0");
 
         return true;
     }
