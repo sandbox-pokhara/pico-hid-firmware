@@ -5,6 +5,7 @@
 #include "tusb.h"
 #include "bsp/board.h"
 #include "hardware/uart.h"
+#include "hardware/irq.h"
 #include <hardware/gpio.h>
 
 #define UART_ID uart0
@@ -33,8 +34,8 @@ enum
 static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
 void led_blinking_task(void);
-void hid_task();
-void uart_task();
+void on_uart_rx();
+void process_command(const char *command);
 
 /*------------- MAIN -------------*/
 int main(void)
@@ -42,23 +43,48 @@ int main(void)
     board_init();
     tusb_init();
 
-    // uart intialization
-    uart_init(UART_ID, BAUD_RATE);
+    // UART Intialization
+    // Set up our UART with a basic baud rate.
+    uart_init(UART_ID, 2400);
+
+    // Set the TX and RX pins by using the function select on the GPIO
+    // Set datasheet for more information on function select
     gpio_set_function(UART_PIN_TX, GPIO_FUNC_UART);
     gpio_set_function(UART_PIN_RX, GPIO_FUNC_UART);
+
+    // Actually, we want a different speed
+    // The call will return the actual baud rate selected, which will be as close as
+    // possible to that requested
+    uart_set_baudrate(UART_ID, BAUD_RATE);
+
+    // Set UART flow control CTS/RTS, we don't want these, so turn them off
     uart_set_hw_flow(UART_ID, false, false);
+
+    // Set our data format
     uart_set_format(UART_ID, 8, 1, UART_PARITY_NONE);
+
+    // Turn off FIFO's - we want to do this character by character
     uart_set_fifo_enabled(UART_ID, false);
 
-    tud_init(BOARD_TUD_RHPORT);
+    // Set up a RX interrupt
+    // We need to set up the handler first
+    // Select correct interrupt for the UART we are using
+    int UART_IRQ = UART_ID == uart0 ? UART0_IRQ : UART1_IRQ;
 
-    uart_puts(UART_ID, "Initalization complete.\n");
+    // And set up and enable the interrupt handlers
+    irq_set_exclusive_handler(UART_IRQ, on_uart_rx);
+    irq_set_enabled(UART_IRQ, true);
+
+    // Now enable the UART to send interrupts - RX only
+    uart_set_irq_enables(UART_ID, true, false);
+
+    //-------------------------------------------------------------//
+
+    tud_init(BOARD_TUD_RHPORT);
     while (1)
     {
         tud_task();
         led_blinking_task();
-        uart_task();
-        // hid_task();
     }
     return 0;
 }
@@ -130,6 +156,32 @@ void led_blinking_task(void)
 //--------------------------------------------------------------------+
 // UART TASK
 //--------------------------------------------------------------------+
+void on_uart_rx()
+{
+    while (uart_is_readable(UART_ID))
+    {
+        char c = uart_getc(UART_ID);
+        if (uart_is_writable(UART_ID))
+        {
+            uart_putc(UART_ID, c);
+            if (c == '\r' || c == '\n' || buffer_index >= UART_BUFFER_SIZE - 1)
+            {
+                uart_rx_buffer[buffer_index] = '\0'; // Null-terminate the string
+                if (buffer_index > 0)
+                {
+                    // Process the received command
+                    process_command(uart_rx_buffer);
+                }
+                buffer_index = 0; // Reset buffer index
+            }
+            else
+            {
+                uart_rx_buffer[buffer_index++] = c;
+            }
+        }
+    }
+}
+
 void process_command(const char *command)
 {
     uart_puts(UART_ID, "Received command: ");
@@ -170,37 +222,6 @@ void process_command(const char *command)
             {
                 tud_hid_n_mouse_report(ITF_MOUSE, 0, 0x00, dx, dy, 0, 0);
             }
-        }
-    }
-}
-
-void uart_task()
-{
-    // poll every 10 ms
-    const uint32_t interval_ms = 10;
-    static uint32_t start_ms = 0;
-
-    if (board_millis() - start_ms < interval_ms)
-        return; // not enough time
-    start_ms += interval_ms;
-
-        if (uart_is_readable(UART_ID))
-    {
-        char c = uart_getc(UART_ID);
-        uart_putc(UART_ID, c); // Echo back the character
-        if (c == '\r' || c == '\n' || buffer_index >= UART_BUFFER_SIZE - 1)
-        {
-            uart_rx_buffer[buffer_index] = '\0'; // Null-terminate the string
-            if (buffer_index > 0)
-            {
-                // Process the received command
-                process_command(uart_rx_buffer);
-            }
-            buffer_index = 0; // Reset buffer index
-        }
-        else
-        {
-            uart_rx_buffer[buffer_index++] = c;
         }
     }
 }
