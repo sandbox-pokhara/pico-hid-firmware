@@ -1,5 +1,11 @@
 # Set minimum required version of CMake
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.5)
+
+if (NOT DEFINED FAMILY)
+    set(FAMILY "rp2040" CACHE STRING "Family for the build")
+endif ()
+include(${CMAKE_CURRENT_LIST_DIR}/tinyusb/hw/bsp/family_support.cmake)
+
 
 # initialize pico-sdk from GIT
 # (note this can come from environment, CMake cache etc)
@@ -26,11 +32,17 @@ add_executable(pico_hid
     main.c
 )
 
-target_include_directories(pico_hid PUBLIC ${CMAKE_CURRENT_LIST_DIR})
+target_include_directories(pico_hid PUBLIC 
+    ${CMAKE_CURRENT_LIST_DIR}
+    ${CMAKE_CURRENT_LIST_DIR}/tinyusb/src
+    ${CMAKE_CURRENT_LIST_DIR}/tinyusb/hw
+)
+
 
 target_sources(pico_hid PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/main.c
     ${CMAKE_CURRENT_LIST_DIR}/usb_descriptors.c
+    ${CMAKE_CURRENT_LIST_DIR}/tinyusb/src/tusb.c
 )
 
 # Link Libraries

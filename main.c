@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include "tusb.h"
-#include "bsp/board.h"
+#include "bsp/board_api.h"
 #include "hardware/uart.h"
 #include "hardware/irq.h"
 #include <hardware/gpio.h>
@@ -214,8 +214,8 @@ void process_command(const char *command)
     else if (strncmp(command, "move,", 5) == 0)
     {
         // Parse move command
-        int dx, dy;
-        if (sscanf(command + 5, "%d,%d", &dx, &dy) == 2)
+        int16_t dx, dy;
+        if (sscanf(command + 5, "%hd,%hd", &dx, &dy) == 2)
         {
             // Move mouse with specified delta values
             if (tud_hid_n_ready(ITF_MOUSE))
