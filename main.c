@@ -5,15 +5,17 @@
 #include "tusb.h"
 #include "bsp/board_api.h"
 #include "hardware/uart.h"
-#include "hardware/irq.h"
 #include <hardware/gpio.h>
 
 #define UART_ID uart0
-#define BAUD_RATE 9600
+#define BAUD_RATE 115200
 #define UART_PIN_TX 0
 #define UART_PIN_RX 1
+#define START_CHARACTER '~'
+#define END_CHARACTER '$'
+#define UART_BUFFER_SIZE 50
+
 #define UART_IRQ_HANDLER uart0_irq_handler
-#define UART_BUFFER_SIZE 128
 
 char uart_rx_buffer[UART_BUFFER_SIZE];
 int buffer_index = 0;
@@ -31,13 +33,27 @@ enum
     BLINK_SUSPENDED = 2500,
 };
 
+#define MAX_KEYS 5 // Maximum number of keys that can be pressed at once
+
+struct HID_FORMAT
+{
+    uint8_t keystroke;
+    uint8_t keys_pressed[MAX_KEYS]; // Array representing the list of pressed keys
+    uint8_t key_index;              // Number of keys currently pressed
+    uint8_t button;
+    uint8_t button_pressed;
+};
+
+struct HID_FORMAT hid_report = {0, {0}, 0, 0, 0};
+
 static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
 void led_blinking_task(void);
+void hid_task();
 void on_uart_rx();
+void button_debug_task(void);
 void process_command(const char *command);
 
-/*------------- MAIN -------------*/
 int main(void)
 {
     board_init();
@@ -81,17 +97,18 @@ int main(void)
     //-------------------------------------------------------------//
 
     tud_init(BOARD_TUD_RHPORT);
+
+    uart_puts(UART_ID, "Initialization complete.\n");
+
     while (1)
     {
         tud_task();
         led_blinking_task();
+        hid_task();
+        button_debug_task();
     }
     return 0;
 }
-
-//--------------------------------------------------------------------+
-// Device callbacks
-//--------------------------------------------------------------------+
 
 void tud_mount_cb(void)
 {
@@ -112,6 +129,77 @@ void tud_suspend_cb(bool remote_wakeup_en)
 void tud_resume_cb(void)
 {
     blink_interval_ms = BLINK_MOUNTED;
+}
+
+void hid_task()
+{
+    const uint32_t interval_ms = 10;
+    static uint32_t start_ms = 0;
+
+    if (board_millis() - start_ms < interval_ms)
+        return; // not enough time
+    start_ms += interval_ms;
+
+    if (tud_suspended())
+    {
+        tud_remote_wakeup();
+    }
+
+    if (tud_hid_n_ready(ITF_KEYBOARD))
+    {
+        static uint8_t prev_keycode[6] = {0}; // Array representing the list of pressed keys and the last keystroke
+
+        // Assign hid_report.keys_pressed to the keycode array
+        uint8_t keycode[6] = {0};
+        for (int i = 0; i < hid_report.key_index; i++)
+        {
+            keycode[i] = hid_report.keys_pressed[i];
+        }
+        keycode[hid_report.key_index] = hid_report.keystroke;
+        hid_report.keystroke = 0; // Clear the keystroke
+
+        bool report_changed = false;
+        // Check if the report has changed
+        for (int i = 0; i < 6; i++)
+        {
+            if (keycode[i] != prev_keycode[i])
+            {
+                report_changed = true;
+                break;
+            }
+        }
+
+        if (report_changed)
+        {
+            tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, keycode);
+            // Update previous report
+            memcpy(prev_keycode, keycode, 6);
+        }
+    }
+
+    if (tud_hid_n_ready(ITF_MOUSE))
+    {
+        static uint8_t prev_mouse_button = 0x00;
+
+        if (hid_report.button != prev_mouse_button)
+        {
+            tud_hid_n_mouse_report(ITF_MOUSE, 0, hid_report.button, 0, 0, 0, 0);
+            prev_mouse_button = hid_report.button;
+        }
+
+        if (hid_report.button_pressed == 1)
+        {
+            hid_report.button = MOUSE_BUTTON_LEFT;
+        }
+        else if (hid_report.button_pressed == 2)
+        {
+            hid_report.button = MOUSE_BUTTON_RIGHT;
+        }
+        else
+        {
+            hid_report.button = 0x00;
+        }
+    }
 }
 
 uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen)
@@ -136,10 +224,6 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     (void)bufsize;
 }
 
-//--------------------------------------------------------------------+
-// BLINKING TASK
-//--------------------------------------------------------------------+
-
 void led_blinking_task(void)
 {
     static uint32_t start_ms = 0;
@@ -153,9 +237,55 @@ void led_blinking_task(void)
     led_state = 1 - led_state; // toggle
 }
 
-//--------------------------------------------------------------------+
-// UART TASK
-//--------------------------------------------------------------------+
+void button_debug_task(void)
+{
+    // Poll every 10ms
+    const uint32_t interval_ms = 10;
+    static uint32_t start_ms = 0;
+
+    if (board_millis() - start_ms < interval_ms)
+        return; // not enough time
+    start_ms += interval_ms;
+
+    uint32_t const btn = board_button_read();
+    static bool has_key = false;
+
+    // If USB is suspended and a button is pressed, wake up the device
+    if (tud_suspended() && btn)
+    {
+        tud_remote_wakeup();
+    }
+
+    // If a button is pressed
+    if (btn)
+    {
+        // If keyboard HID interface is ready
+        if (tud_hid_n_ready(ITF_KEYBOARD))
+        {
+            uint8_t keycode[6] = {0};
+            keycode[0] = HID_KEY_A; // Sending 'A' key
+            tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, keycode);
+            has_key = true;
+        }
+
+        // If mouse HID interface is ready
+        if (tud_hid_n_ready(ITF_MOUSE))
+        {
+            int8_t pos = 5;
+            tud_hid_n_mouse_report(ITF_MOUSE, 0, 0x00, pos, pos, 0, 0);
+        }
+    }
+    else
+    {
+        // If there was previously a key pressed, send an empty key report
+        if (has_key)
+        {
+            tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, NULL);
+        }
+        has_key = false;
+    }
+}
+
 void on_uart_rx()
 {
     while (uart_is_readable(UART_ID))
@@ -181,47 +311,83 @@ void on_uart_rx()
         }
     }
 }
-
 void process_command(const char *command)
 {
-    uart_puts(UART_ID, "Received command: ");
-    uart_puts(UART_ID, command);
-    uart_puts(UART_ID, "\n");
-
-    // Remote wakeup
-    if (tud_suspended())
+    if (strcmp(command, "mouse_click_left") == 0)
     {
-        // Wake up host if we are in suspend mode
-        // and REMOTE_WAKEUP feature is enabled by host
-        tud_remote_wakeup();
+        hid_report.button = MOUSE_BUTTON_LEFT;
+        hid_report.button_pressed = false;
     }
-
-    if (strcmp(command, "click") == 0)
+    else if (strcmp(command, "mouse_click_right") == 0)
     {
-        // Mouse click
-        if (tud_hid_n_ready(ITF_MOUSE))
-        {
-            tud_hid_n_mouse_report(ITF_MOUSE, 0, MOUSE_BUTTON_LEFT, 0, 0, 0, 0);
-        }
+        hid_report.button = MOUSE_BUTTON_RIGHT;
+        hid_report.button_pressed = false;
     }
-    else if (strcmp(command, "release") == 0)
+    else if (strcmp(command, "mouse_press_left") == 0)
     {
-        if (tud_hid_n_ready(ITF_MOUSE))
-        {
-            tud_hid_n_mouse_report(ITF_MOUSE, 0, 0x00, 0, 0, 0, 0);
-        }
+        hid_report.button_pressed = 1;
     }
-    else if (strncmp(command, "move,", 5) == 0)
+    else if (strcmp(command, "mouse_press_right") == 0)
     {
-        // Parse move command
+        hid_report.button_pressed = 2;
+    }
+    else if (strcmp(command, "mouse_release") == 0)
+    {
+        hid_report.button_pressed = 0;
+    }
+    else if (strncmp(command, "mouse_move,", 11) == 0)
+    {
+        // Parse mouse move command
         int16_t dx, dy;
-        if (sscanf(command + 5, "%hd,%hd", &dx, &dy) == 2)
+        if (sscanf(command + 11, "%hd,%hd", &dx, &dy) == 2)
         {
-            // Move mouse with specified delta values
-            if (tud_hid_n_ready(ITF_MOUSE))
+            tud_hid_n_mouse_report(ITF_MOUSE, 0, 0, dx, dy, 0, 0);
+        }
+    }
+    else if (strncmp(command, "keyboard_keystroke,", 19) == 0)
+    {
+        // Parse keyboard keystroke command
+        uint8_t code;
+        if (sscanf(command + 19, "%hhu", &code) == 1)
+        {
+            hid_report.keystroke = code;
+        }
+    }
+    else if (strncmp(command, "keyboard_press,", 15) == 0)
+    {
+        // Parse keyboard press command
+        uint8_t code;
+        if (sscanf(command + 15, "%hhu", &code) == 1)
+        {
+            if (hid_report.key_index < MAX_KEYS)
             {
-                tud_hid_n_mouse_report(ITF_MOUSE, 0, 0x00, dx, dy, 0, 0);
+                hid_report.keys_pressed[hid_report.key_index++] = code;
             }
         }
+    }
+    else if (strncmp(command, "keyboard_release,", 17) == 0)
+    {
+        uint8_t code;
+        if (sscanf(command + 17, "%hhu", &code) == 1)
+        {
+            for (int i = 0; i < hid_report.key_index; i++)
+            {
+                if (hid_report.keys_pressed[i] == code)
+                {
+                    // Shift elements to remove released key
+                    for (int j = i; j < hid_report.key_index - 1; j++)
+                    {
+                        hid_report.keys_pressed[j] = hid_report.keys_pressed[j + 1];
+                    }
+                    hid_report.key_index--;
+                    break;
+                }
+            }
+        }
+    }
+    else if (strcmp(command, "keyboard_release") == 0)
+    {
+        hid_report.key_index = 0;
+        memset(hid_report.keys_pressed, 0, MAX_KEYS); // Clear keys_pressed array
     }
 }
