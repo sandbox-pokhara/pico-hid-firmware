@@ -37,14 +37,16 @@ enum
 
 struct HID_FORMAT
 {
-    uint8_t keystroke;
-    uint8_t keys_pressed[MAX_KEYS]; // Array representing the list of pressed keys
-    uint8_t key_index;              // Number of keys currently pressed
+    char keystroke;
+    char keys_pressed[MAX_KEYS]; // Array representing the list of pressed keys
+    uint8_t key_index;           // Number of keys currently pressed
     uint8_t button;
     uint8_t button_pressed;
 };
 
 struct HID_FORMAT hid_report = {0, {0}, 0, 0, 0};
+
+uint8_t const conv_table[128][2] = {HID_ASCII_TO_KEYCODE};
 
 static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
@@ -53,6 +55,7 @@ void hid_task();
 void on_uart_rx();
 void button_debug_task(void);
 void process_command(const char *command);
+void ascii_to_hid(char ascii_char, uint8_t *modifier, uint8_t *keycode);
 
 int main(void)
 {
@@ -149,13 +152,20 @@ void hid_task()
     {
         static uint8_t prev_keycode[6] = {0}; // Array representing the list of pressed keys and the last keystroke
 
+        uint8_t modifier = 0;
+        uint8_t keycode_hid = 0;
+
         // Assign hid_report.keys_pressed to the keycode array
         uint8_t keycode[6] = {0};
         for (int i = 0; i < hid_report.key_index; i++)
         {
-            keycode[i] = hid_report.keys_pressed[i];
+            ascii_to_hid(hid_report.keys_pressed[i], &modifier, &keycode_hid);
+            keycode[i] = keycode_hid;
         }
-        keycode[hid_report.key_index] = hid_report.keystroke;
+
+        ascii_to_hid(hid_report.keystroke, &modifier, &keycode_hid);
+        keycode[hid_report.key_index] = keycode_hid;
+
         hid_report.keystroke = 0; // Clear the keystroke
 
         bool report_changed = false;
@@ -171,7 +181,7 @@ void hid_task()
 
         if (report_changed)
         {
-            tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, 0, keycode);
+            tud_hid_n_keyboard_report(ITF_KEYBOARD, 0, modifier, keycode);
             // Update previous report
             memcpy(prev_keycode, keycode, 6);
         }
@@ -347,8 +357,8 @@ void process_command(const char *command)
     else if (strncmp(command, "keyboard_keystroke,", 19) == 0)
     {
         // Parse keyboard keystroke command
-        uint8_t code;
-        if (sscanf(command + 19, "%hhu", &code) == 1)
+        char code;
+        if (sscanf(command + 19, "%c", &code) == 1)
         {
             hid_report.keystroke = code;
         }
@@ -356,8 +366,8 @@ void process_command(const char *command)
     else if (strncmp(command, "keyboard_press,", 15) == 0)
     {
         // Parse keyboard press command
-        uint8_t code;
-        if (sscanf(command + 15, "%hhu", &code) == 1)
+        char code;
+        if (sscanf(command + 15, "%c", &code) == 1)
         {
             if (hid_report.key_index < MAX_KEYS)
             {
@@ -367,15 +377,15 @@ void process_command(const char *command)
     }
     else if (strncmp(command, "keyboard_release,", 17) == 0)
     {
-        uint8_t code;
-        if (sscanf(command + 17, "%hhu", &code) == 1)
+        char code;
+        if (sscanf(command + 17, "%c", &code) == 1)
         {
             for (int i = 0; i < hid_report.key_index; i++)
             {
                 if (hid_report.keys_pressed[i] == code)
                 {
                     // Shift elements to remove released key
-                    for (int j = i; j < hid_report.key_index - 1; j++)
+                    for (int j = i; j < hid_report.key_index; j++)
                     {
                         hid_report.keys_pressed[j] = hid_report.keys_pressed[j + 1];
                     }
@@ -389,5 +399,21 @@ void process_command(const char *command)
     {
         hid_report.key_index = 0;
         memset(hid_report.keys_pressed, 0, MAX_KEYS); // Clear keys_pressed array
+    }
+}
+
+void ascii_to_hid(char ascii_char, uint8_t *modifier, uint8_t *keycode)
+{
+    *keycode = 0;
+    // Check if ASCII character is within valid range
+    if (ascii_char > 0 && ascii_char < 128)
+    {
+        // Check if left shift modifier is needed
+        if (conv_table[ascii_char][0])
+        {
+            *modifier = KEYBOARD_MODIFIER_LEFTSHIFT;
+        }
+        // Get the HID keycode
+        *keycode = conv_table[ascii_char][1];
     }
 }

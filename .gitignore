@@ -91,3 +91,5 @@ tinyusb/lib/FreeRTOS-Kernel
 tinyusb/lib/lwip
 tinyusb/lib/sct_neopixel
 tinyusb/tools/uf2
+
+pico-sdk
