@@ -346,30 +346,32 @@ void process_command(const char *command)
     }
     else if (strncmp(command, "keyboard_keystroke,", 19) == 0)
     {
+
         // Parse keyboard keystroke command
-        uint8_t code;
-        if (sscanf(command + 19, "%hhu", &code) == 1)
+        int16_t signed_code;
+        if (sscanf(command + 19, "%hd", &signed_code) == 1)
         {
-            hid_report.keystroke = code;
+            hid_report.keystroke = (uint8_t)signed_code; // it did not read the uint8_t with %hhu correctly so had to use %hd and then cast it to uint8_t
         }
     }
     else if (strncmp(command, "keyboard_press,", 15) == 0)
     {
         // Parse keyboard press command
-        uint8_t code;
-        if (sscanf(command + 15, "%hhu", &code) == 1)
+        int16_t signed_code;
+        if (sscanf(command + 15, "%hd", &signed_code) == 1)
         {
             if (hid_report.key_index < MAX_KEYS)
             {
-                hid_report.keys_pressed[hid_report.key_index++] = code;
+                hid_report.keys_pressed[hid_report.key_index++] = (uint8_t)signed_code; // it did not read the uint8_t with %hhu correctly so had to use %hd and then cast it to uint8_t
             }
         }
     }
     else if (strncmp(command, "keyboard_release,", 17) == 0)
     {
-        uint8_t code;
-        if (sscanf(command + 17, "%hhu", &code) == 1)
+        int16_t signed_code;
+        if (sscanf(command + 17, "%hd", &signed_code) == 1)
         {
+            uint8_t code = (uint8_t)signed_code; // it did not read the uint8_t with %hhu correctly so had to use %hd and then cast it to uint8_t
             for (int i = 0; i < hid_report.key_index; i++)
             {
                 if (hid_report.keys_pressed[i] == code)
